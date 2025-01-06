@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Exit on errors and undefined variables
+set -eu
+
 # Configuration variables for Minecraft server setup
 export MINECRAFT_USER="minecraft"
 export MINECRAFT_GROUP="minecraft"

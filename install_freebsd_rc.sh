@@ -2,7 +2,6 @@
 
 # Exit on errors and undefined variables
 set -eu
-IFS=$'\n\t'
 
 # Ensure the script is run as root
 if [ "$(id -u)" -ne 0 ]; then
@@ -109,7 +108,7 @@ fi
 
 # Step 6: Accept the Minecraft EULA
 echo "Accepting the Minecraft EULA..."
-su -m "$MINECRAFT_USER" -c "echo 'eula=true' > $MINECRAFT_DIR/eula.txt"
+su -m "$MINECRAFT_USER" -c "echo 'eula=true' >$MINECRAFT_DIR/eula.txt"
 
 # Step 7: Copy the minecraft_service.sh script
 echo "Copying the minecraft_service.sh script..."
@@ -187,9 +186,7 @@ tee "$RESTART_SCRIPT" >/dev/null <<EOF
 . "$CONFIG_FILE"
 
 echo "\$(date): Restarting Minecraft server..."
-service minecraft stop
-sleep 20  # Wait for 20 seconds to ensure the server has stopped completely
-service minecraft start
+service minecraft restart
 echo "\$(date): Minecraft server restarted."
 EOF
 
@@ -200,8 +197,8 @@ chmod +x "$RESTART_SCRIPT"
 echo "Setting up cron jobs..."
 current_crontab=$(crontab -l 2>/dev/null || true)
 
-monitor_cron="*/30 * * * * $MONITOR_SCRIPT >> /var/log/minecraft_monitor.log 2>&1"
-restart_cron="0 4 * * * $RESTART_SCRIPT >> /var/log/minecraft_restart.log 2>&1"
+monitor_cron="*/30 * * * * $MONITOR_SCRIPT >>/var/log/minecraft_monitor.log 2>&1"
+restart_cron="0 4 * * * $RESTART_SCRIPT >>/var/log/minecraft_restart.log 2>&1"
 
 temp_crontab=$(mktemp)
 
