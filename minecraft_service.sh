@@ -15,7 +15,7 @@ run_as_minecraft_user() {
     if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
         /bin/sh -c "$*"
     else
-        su -m "$MINECRAFT_USER" -c "$*"
+        su "$MINECRAFT_USER" -c "$*"
     fi
 }
 

@@ -98,7 +98,7 @@ if [ $NODOWNLOAD -eq 0 ]; then
     read -r DOWNLOAD_URL
 
     echo "Downloading Minecraft server jar..."
-    if ! su -m "$MINECRAFT_USER" -c "wget -O $MINECRAFT_DIR/$MINECRAFT_JAR $DOWNLOAD_URL"; then
+    if ! su "$MINECRAFT_USER" -c "wget -O $MINECRAFT_DIR/$MINECRAFT_JAR $DOWNLOAD_URL"; then
         echo "Failed to download the Minecraft server jar. Exiting..."
         exit 1
     fi
@@ -108,7 +108,7 @@ fi
 
 # Step 6: Accept the Minecraft EULA
 echo "Accepting the Minecraft EULA..."
-su -m "$MINECRAFT_USER" -c "echo 'eula=true' >$MINECRAFT_DIR/eula.txt"
+su "$MINECRAFT_USER" -c "echo 'eula=true' >$MINECRAFT_DIR/eula.txt"
 
 # Step 7: Copy the minecraft_service.sh script
 echo "Copying the minecraft_service.sh script..."
