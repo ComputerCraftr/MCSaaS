@@ -56,7 +56,7 @@ echo "Appending necessary paths to the configuration file..."
     echo 'SERVICE_SCRIPT="/etc/systemd/system/minecraft.service"'
     echo "TMUX_PATH=$(command -v tmux)"
     echo "JAVA_PATH=$(command -v java)"
-    echo "MINECRAFT_COMMAND=\"exec \$JAVA_PATH -Xmx\$MEMORY_ALLOCATION -Xms\$INITIAL_MEMORY -jar \$MINECRAFT_JAR nogui\""
+    echo "MINECRAFT_COMMAND=\"exec \$JAVA_PATH -Xmx\$MEMORY_ALLOCATION -Xms\$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar \$MINECRAFT_JAR nogui\""
     echo "START_COMMAND=\"\$MINECRAFT_COMMAND\""
 } >>"$CONFIG_FILE"
 
@@ -144,7 +144,6 @@ RestrictRealtime=yes
 SystemCallFilter=@system-service
 PrivateDevices=yes
 
-LimitNOFILE=8192
 LimitNPROC=256
 MemoryMax=$MEMORY_ALLOCATION
 
