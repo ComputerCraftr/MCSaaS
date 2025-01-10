@@ -27,33 +27,43 @@ minecraft_start() {
 
     if ! session_running; then
         echo "Starting Minecraft server..."
-        run_as_minecraft_user "$TMUX_PATH -L $TMUX_SOCKET new-session -d -s $TMUX_SESSION -c $MINECRAFT_DIR \"$START_COMMAND\""
+        mkdir -p "$TMUX_SOCKET_DIR"
+        chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
+        run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH new-session -d -s $TMUX_SESSION -c $MINECRAFT_DIR \"$START_COMMAND\""
         echo "Minecraft server started in detached tmux session '$TMUX_SESSION'."
-        pid=$(run_as_minecraft_user "$TMUX_PATH -L $TMUX_SOCKET list-panes -t $TMUX_SESSION -F '#{pane_pid}'")
+        pid=$(run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH list-panes -t $TMUX_SESSION -F '#{pane_pid}'")
         if [ "$(echo "$pid" | wc -l)" -ne 1 ]; then
             echo "Failed to determine server PID, multiple active tmux sessions."
             return 1
         fi
-        printf "%s" "$pid" >"$PID_FILE"
+        printf "%s" "$pid" >"$PID_PATH"
+        for user in $(getent group "$MINECRAFT_GROUP" | cut -d ':' -f 4 | tr ',' '\n'); do
+            if [ "$user" != "$MINECRAFT_USER" ] && [ -n "$user" ]; then
+                run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH server-access -a \"$user\""
+            fi
+        done
+        chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
+        chmod 660 "$TMUX_SOCKET_PATH"
+        chmod 770 "$TMUX_SOCKET_DIR"
     else
         echo "A tmux session named '$TMUX_SESSION' is already running."
     fi
 }
 
 session_running() {
-    run_as_minecraft_user "$TMUX_PATH -L $TMUX_SOCKET has-session -t $TMUX_SESSION" 2>/dev/null
+    run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH has-session -t $TMUX_SESSION" 2>/dev/null
 }
 
 issue_cmd() {
     command="$*"
-    run_as_minecraft_user "$TMUX_PATH -L $TMUX_SOCKET send-keys -t $TMUX_SESSION.0 \"$command\" C-m"
+    run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH send-keys -t $TMUX_SESSION.0 \"$command\" C-m"
 }
 
 minecraft_stop() {
     if ! session_running; then
         echo "The server is already stopped."
-        if [ -f "$PID_FILE" ]; then
-            rm "$PID_FILE"
+        if [ -f "$PID_PATH" ]; then
+            rm "$PID_PATH"
             return $? # Return the status of the rm command
         else
             return 0 # Return 0 if the PID file does not exist
@@ -90,8 +100,8 @@ minecraft_stop() {
     done
 
     echo "Server stopped successfully."
-    if [ -f "$PID_FILE" ]; then
-        rm "$PID_FILE"
+    if [ -f "$PID_PATH" ]; then
+        rm "$PID_PATH"
         return $? # Return the status of the rm command
     else
         return 0 # Return 0 if the PID file does not exist
@@ -108,8 +118,8 @@ minecraft_log() {
 
 minecraft_attach() {
     if session_running; then
-        run_as_minecraft_user "TERM=screen-256color $TMUX_PATH -L $TMUX_SOCKET attach -t $TMUX_SESSION.0" ||
-            run_as_minecraft_user "TERM=screen $TMUX_PATH -L $TMUX_SOCKET attach -t $TMUX_SESSION.0"
+        run_as_minecraft_user "TERM=screen-256color $TMUX_PATH -S $TMUX_SOCKET_PATH attach-session -t $TMUX_SESSION.0" ||
+            run_as_minecraft_user "TERM=screen $TMUX_PATH -S $TMUX_SOCKET_PATH attach-session -t $TMUX_SESSION.0"
     else
         echo "No tmux session named '$TMUX_SESSION' is running."
     fi
