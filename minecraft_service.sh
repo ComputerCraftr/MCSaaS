@@ -15,7 +15,7 @@ run_as_minecraft_user() {
     if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
         /bin/sh -c "$*"
     else
-        su "$MINECRAFT_USER" -c "$*"
+        /usr/local/sbin/chpst -u "$MINECRAFT_USER" /bin/sh -c "$*"
     fi
 }
 
