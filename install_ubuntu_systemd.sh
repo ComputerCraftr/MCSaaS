@@ -1,4 +1,5 @@
 #!/bin/sh
+# install_ubuntu_systemd.sh – Installer for Minecraft server on Debian/Ubuntu using systemd
 
 # Exit on errors and undefined variables
 set -eu
@@ -26,22 +27,16 @@ done
 
 # Step 1: Install necessary packages
 echo "Installing necessary packages..."
-apt-get update
-apt-get install -y tmux openjdk-21-jdk-headless wget
+apt update
+apt install -y tmux openjdk-21-jdk-headless curl
 
-# Check if necessary commands are available
-command -v tmux >/dev/null 2>&1 || {
-    echo "tmux is required but it's not installed. Aborting." >&2
-    exit 1
-}
-command -v java >/dev/null 2>&1 || {
-    echo "java is required but it's not installed. Aborting." >&2
-    exit 1
-}
-command -v wget >/dev/null 2>&1 || {
-    echo "wget is required but it's not installed. Aborting." >&2
-    exit 1
-}
+# Verify required commands are available
+for cmd in tmux java curl; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+        echo "$cmd is required but not installed. Exiting."
+        exit 1
+    }
+done
 
 # Step 2: Copy the configuration file
 echo "Copying the configuration file..."
@@ -52,7 +47,7 @@ chmod 644 "$CONFIG_FILE"
 # Step 3: Append necessary paths to the configuration file
 echo "Appending necessary paths to the configuration file..."
 {
-    echo 'SERVICE_SCRIPT="/etc/systemd/system/minecraft.service"'
+    echo 'SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
     echo "TMUX_PATH=$(command -v tmux)"
     echo "JAVA_PATH=$(command -v java)"
     echo "MINECRAFT_COMMAND=\"exec \$JAVA_PATH -Xmx\$MEMORY_ALLOCATION -Xms\$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar \$MINECRAFT_JAR nogui\""
@@ -111,14 +106,14 @@ su "$MINECRAFT_USER" -c "echo 'eula=true' >$MINECRAFT_DIR/eula.txt"
 
 # Step 7: Copy the minecraft_service.sh script
 echo "Copying the minecraft_service.sh script..."
-cp minecraft_service.sh "$SERVICE_SH"
+cp minecraft_service.sh "$SERVICE_SCRIPT"
 
 # Make the minecraft_service.sh script executable
-chmod +x "$SERVICE_SH"
+chmod +x "$SERVICE_SCRIPT"
 
 # Step 8: Create the systemd service unit
 echo "Creating the systemd service unit..."
-tee "$SERVICE_SCRIPT" >/dev/null <<EOF
+tee "$SERVICE_UNIT" >/dev/null <<EOF
 [Unit]
 Description=Minecraft Server
 
@@ -148,9 +143,9 @@ MemoryMax=$MEMORY_ALLOCATION
 
 WorkingDirectory=$MINECRAFT_DIR
 PIDFile=$PID_PATH
-ExecStart=$SERVICE_SH start
-ExecReload=$SERVICE_SH reload
-ExecStop=$SERVICE_SH stop
+ExecStart=$SERVICE_SCRIPT start
+ExecReload=$SERVICE_SCRIPT reload
+ExecStop=$SERVICE_SCRIPT stop
 
 # No private /tmp or else the tmux socket/session inside can't be attached externally
 PrivateTmp=no
@@ -172,6 +167,15 @@ echo "Creating the monitoring script..."
 tee "$MONITOR_SCRIPT" >/dev/null <<EOF
 #!/bin/sh
 
+# Exit on errors and undefined variables
+set -eu
+
+# Ensure the script is run as root
+if [ "\$(id -u)" -ne 0 ]; then
+    echo "\$(date): This script must be run as root. Use sudo or run as root."
+    exit 1
+fi
+
 # Source the configuration file
 . "$CONFIG_FILE"
 
@@ -192,6 +196,15 @@ chmod +x "$MONITOR_SCRIPT"
 echo "Creating the restart script..."
 tee "$RESTART_SCRIPT" >/dev/null <<EOF
 #!/bin/sh
+
+# Exit on errors and undefined variables
+set -eu
+
+# Ensure the script is run as root
+if [ "\$(id -u)" -ne 0 ]; then
+    echo "\$(date): This script must be run as root. Use sudo or run as root."
+    exit 1
+fi
 
 # Source the configuration file
 . "$CONFIG_FILE"
