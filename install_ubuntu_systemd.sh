@@ -28,7 +28,7 @@ done
 # Step 1: Install necessary packages
 echo "Installing necessary packages..."
 apt update
-apt install -y tmux openjdk-21-jdk-headless curl
+apt install -y tmux openjdk-25-jdk-headless curl runit
 
 # Verify required commands are available
 for cmd in tmux java curl; do
@@ -50,8 +50,8 @@ echo "Appending necessary paths to the configuration file..."
     echo 'SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
     echo "TMUX_PATH=$(command -v tmux)"
     echo "JAVA_PATH=$(command -v java)"
-    echo "MINECRAFT_COMMAND=\"exec \$JAVA_PATH -Xmx\$MEMORY_ALLOCATION -Xms\$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar \$MINECRAFT_JAR nogui\""
-    echo "START_COMMAND=\"\$MINECRAFT_COMMAND\""
+    echo 'MINECRAFT_COMMAND="exec $JAVA_PATH -Xmx$MEMORY_ALLOCATION -Xms$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar $MINECRAFT_JAR nogui"'
+    echo 'START_COMMAND="$MINECRAFT_COMMAND"'
 } >>"$CONFIG_FILE"
 
 # Source the configuration file
@@ -92,7 +92,7 @@ if [ $NODOWNLOAD -eq 0 ]; then
     read -r DOWNLOAD_URL
 
     echo "Downloading Minecraft server jar..."
-    if ! su "$MINECRAFT_USER" -c "wget -O $MINECRAFT_DIR/$MINECRAFT_JAR $DOWNLOAD_URL"; then
+    if ! su "$MINECRAFT_USER" -c "curl -fLo $MINECRAFT_DIR/$MINECRAFT_JAR $DOWNLOAD_URL"; then
         echo "Failed to download the Minecraft server jar. Exiting..."
         exit 1
     fi
