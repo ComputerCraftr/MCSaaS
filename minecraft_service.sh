@@ -7,7 +7,7 @@ set -eu
 CONFIG_FILE="/etc/minecraft_config.sh"
 
 # Source the configuration file
-# shellcheck source=minecraft_config.sh
+# shellcheck source=templates/config.sh.in
 . "$CONFIG_FILE"
 
 # Function to run a command as MINECRAFT_USER if the current user is not MINECRAFT_USER

@@ -1,0 +1,28 @@
+#!/bin/sh
+
+# Exit on errors and undefined variables
+set -eu
+
+# Ensure the script is run as root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "$(date): This script must be run as root. Use sudo or run as root."
+    exit 1
+fi
+
+CONFIG_FILE="@CONFIG_FILE@"
+
+# Source the configuration file
+. "$CONFIG_FILE"
+
+log() {
+    @LOG_COMMAND@
+}
+
+# Check the status of the Minecraft server
+if ! @STATUS_COMMAND@; then
+    log "$(date): Minecraft server is down. Restarting..."
+    @START_COMMAND@
+    log "$(date): Minecraft server started."
+else
+    log "$(date): Minecraft server is running."
+fi
