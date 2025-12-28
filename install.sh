@@ -53,6 +53,9 @@ if [ -z "$OS" ]; then
     exit 1
 fi
 
+OS_INPUT="$OS"
+OS=$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')
+
 if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
     echo "Cannot use --url with -nodl."
     usage
@@ -60,9 +63,9 @@ if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
 fi
 
 case "$OS" in
-Ubuntu | FreeBSD) ;;
+ubuntu | freebsd) ;;
 *)
-    echo "Unsupported OS: $OS"
+    echo "Unsupported OS: $OS_INPUT"
     usage
     exit 1
     ;;
@@ -90,19 +93,19 @@ user_exists() {
 add_group() {
     name="$1"
     case "$OS" in
-    Ubuntu) groupadd "$name" ;;
-    FreeBSD) pw groupadd -n "$name" -q ;;
+    ubuntu) groupadd "$name" ;;
+    freebsd) pw groupadd -n "$name" -q ;;
     esac
 }
 
 add_user() {
     name="$1"
     case "$OS" in
-    Ubuntu)
+    ubuntu)
         adduser --system --shell /bin/sh --home "$MINECRAFT_DIR" --gecos "Minecraft Server User" \
             --ingroup "$MINECRAFT_GROUP" --disabled-login "$name"
         ;;
-    FreeBSD)
+    freebsd)
         pw useradd -n "$name" -s /bin/sh -d "$MINECRAFT_DIR" -m -c "Minecraft Server User" \
             -g "$MINECRAFT_GROUP" -w no -q
         ;;
@@ -113,18 +116,18 @@ add_user_to_group() {
     user="$1"
     group="$2"
     case "$OS" in
-    Ubuntu) usermod -aG "$group" "$user" ;;
-    FreeBSD) pw groupmod -n "$group" -m "$user" -q ;;
+    ubuntu) usermod -aG "$group" "$user" ;;
+    freebsd) pw groupmod -n "$group" -m "$user" -q ;;
     esac
 }
 
 install_packages() {
     case "$OS" in
-    Ubuntu)
+    ubuntu)
         apt update
         apt install -y tmux openjdk-17-jdk-headless curl runit
         ;;
-    FreeBSD)
+    freebsd)
         pkg update
         pkg install -y tmux openjdk17 curl runit
         ;;
@@ -133,11 +136,11 @@ install_packages() {
 
 enable_service() {
     case "$OS" in
-    Ubuntu)
+    ubuntu)
         systemctl daemon-reload
         systemctl enable minecraft.service
         ;;
-    FreeBSD)
+    freebsd)
         sysrc minecraft_enable="YES"
         ;;
     esac
@@ -145,8 +148,8 @@ enable_service() {
 
 start_message() {
     case "$OS" in
-    Ubuntu) echo "You can start the Minecraft server with: sudo systemctl start minecraft.service" ;;
-    FreeBSD) echo "You can start the Minecraft server with: sudo service minecraft start" ;;
+    ubuntu) echo "You can start the Minecraft server with: sudo systemctl start minecraft.service" ;;
+    freebsd) echo "You can start the Minecraft server with: sudo service minecraft start" ;;
     esac
 }
 
@@ -168,13 +171,13 @@ temp_config=$(mktemp)
 
 CONFIG_OWNER="root:$(id -gn 0)"
 case "$OS" in
-FreeBSD)
+freebsd)
     SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
     RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
     # shellcheck disable=SC2016
     START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
     ;;
-Ubuntu)
+ubuntu)
     SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
     RESOURCE_LIMIT_LINE=""
     # shellcheck disable=SC2016
@@ -277,7 +280,7 @@ ESC_PID_PATH=$(escape_sed_replacement "$PID_PATH")
 ESC_SERVICE_SCRIPT=$(escape_sed_replacement "$SERVICE_SCRIPT")
 
 case "$OS" in
-FreeBSD)
+freebsd)
     sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
         -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
         -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
@@ -285,7 +288,7 @@ FreeBSD)
         "$TEMPLATE_DIR/rc.d.in" | tee "$RC_SCRIPT" >/dev/null
     chmod +x "$RC_SCRIPT"
     ;;
-Ubuntu)
+ubuntu)
     sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
         -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
         -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
@@ -303,12 +306,12 @@ enable_service
 # Step 9: Create the monitoring script
 echo "Creating the monitoring script..."
 case "$OS" in
-FreeBSD)
+freebsd)
     LOG_COMMAND='logger -t minecraft-monitor "$*"'
     STATUS_COMMAND='service minecraft status | grep -q "Minecraft server is running"'
     START_COMMAND='service minecraft start'
     ;;
-Ubuntu)
+ubuntu)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
     STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
     START_COMMAND='systemctl start minecraft.service'
@@ -326,11 +329,11 @@ chmod +x "$MONITOR_SCRIPT"
 # Step 10: Create the restart script
 echo "Creating the restart script..."
 case "$OS" in
-FreeBSD)
+freebsd)
     LOG_COMMAND='logger -t minecraft-restart "$*"'
     RESTART_COMMAND='service minecraft restart'
     ;;
-Ubuntu)
+ubuntu)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
     RESTART_COMMAND='systemctl restart minecraft.service'
     ;;
