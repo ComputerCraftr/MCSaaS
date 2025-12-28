@@ -118,37 +118,11 @@ chmod +x "$SERVICE_SCRIPT"
 
 # Step 7: Create the rc.d service script
 echo "Creating the rc.d service script..."
-tee "$RC_SCRIPT" >/dev/null <<EOF
-#!/bin/sh
-
-# PROVIDE: minecraft
-# REQUIRE: LOGIN
-# KEYWORD: shutdown
-
-. /etc/rc.subr
-
-name="minecraft"
-rcvar=minecraft_enable
-
-load_rc_config \$name
-
-: \${minecraft_enable:="NO"}
-: \${minecraft_user:="$MINECRAFT_USER"}
-: \${minecraft_group:="$MINECRAFT_GROUP"}
-: \${minecraft_dir:="$MINECRAFT_DIR"}
-: \${service_script:="$SERVICE_SCRIPT"}
-
-start_cmd="\$service_script start"
-stop_cmd="\$service_script stop"
-status_cmd="\$service_script status"
-log_cmd="\$service_script log"
-attach_cmd="\$service_script attach"
-cmd_cmd="\$service_script cmd"
-reload_cmd="\$service_script reload"
-extra_commands="log attach cmd reload"
-
-run_rc_command "\$@"
-EOF
+sed -e "s|@MINECRAFT_USER@|$MINECRAFT_USER|g" \
+    -e "s|@MINECRAFT_GROUP@|$MINECRAFT_GROUP|g" \
+    -e "s|@MINECRAFT_DIR@|$MINECRAFT_DIR|g" \
+    -e "s|@SERVICE_SCRIPT@|$SERVICE_SCRIPT|g" \
+    "$TEMPLATE_DIR/rc.d.in" | tee "$RC_SCRIPT" >/dev/null
 
 # Step 8: Make the rc.d service script executable and enable the service
 echo "Making the rc.d service script executable and enabling the Minecraft service..."

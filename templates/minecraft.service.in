@@ -1,0 +1,41 @@
+[Unit]
+Description=Minecraft Server
+
+Wants=network.target
+After=network.target
+
+[Service]
+Type=forking
+User=@MINECRAFT_USER@
+Group=@MINECRAFT_GROUP@
+Nice=5
+TimeoutStopSec=90
+
+ProtectHome=read-only
+ProtectSystem=full
+NoNewPrivileges=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictRealtime=yes
+SystemCallFilter=@system-service
+PrivateDevices=yes
+
+LimitNPROC=256
+MemoryMax=@MEMORY_ALLOCATION@
+
+WorkingDirectory=@MINECRAFT_DIR@
+PIDFile=@PID_PATH@
+ExecStart=@SERVICE_SCRIPT@ start
+ExecReload=@SERVICE_SCRIPT@ reload
+ExecStop=@SERVICE_SCRIPT@ stop
+
+# No private /tmp or else the tmux socket/session inside can't be attached externally
+PrivateTmp=no
+
+Restart=on-failure
+RestartSec=20s
+
+[Install]
+WantedBy=multi-user.target

@@ -118,49 +118,13 @@ chmod +x "$SERVICE_SCRIPT"
 
 # Step 7: Create the systemd service unit
 echo "Creating the systemd service unit..."
-tee "$SERVICE_UNIT" >/dev/null <<EOF
-[Unit]
-Description=Minecraft Server
-
-Wants=network.target
-After=network.target
-
-[Service]
-Type=forking
-User=$MINECRAFT_USER
-Group=$MINECRAFT_GROUP
-Nice=5
-TimeoutStopSec=90
-
-ProtectHome=read-only
-ProtectSystem=full
-NoNewPrivileges=yes
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-RestrictRealtime=yes
-SystemCallFilter=@system-service
-PrivateDevices=yes
-
-LimitNPROC=256
-MemoryMax=$MEMORY_ALLOCATION
-
-WorkingDirectory=$MINECRAFT_DIR
-PIDFile=$PID_PATH
-ExecStart=$SERVICE_SCRIPT start
-ExecReload=$SERVICE_SCRIPT reload
-ExecStop=$SERVICE_SCRIPT stop
-
-# No private /tmp or else the tmux socket/session inside can't be attached externally
-PrivateTmp=no
-
-Restart=on-failure
-RestartSec=20s
-
-[Install]
-WantedBy=multi-user.target
-EOF
+sed -e "s|@MINECRAFT_USER@|$MINECRAFT_USER|g" \
+    -e "s|@MINECRAFT_GROUP@|$MINECRAFT_GROUP|g" \
+    -e "s|@MINECRAFT_DIR@|$MINECRAFT_DIR|g" \
+    -e "s|@MEMORY_ALLOCATION@|$MEMORY_ALLOCATION|g" \
+    -e "s|@PID_PATH@|$PID_PATH|g" \
+    -e "s|@SERVICE_SCRIPT@|$SERVICE_SCRIPT|g" \
+    "$TEMPLATE_DIR/minecraft.service.in" | tee "$SERVICE_UNIT" >/dev/null
 
 # Step 8: Reload systemd and enable the service
 echo "Reloading systemd and enabling the Minecraft service..."
