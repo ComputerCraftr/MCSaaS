@@ -29,6 +29,12 @@ else
     }
 fi
 
+try_perm() {
+    if ! "$@"; then
+        echo "Warning: permission update failed: $*" >&2
+    fi
+}
+
 minecraft_start() {
     if [ ! -d "$MINECRAFT_DIR" ]; then
         echo "Minecraft server directory $MINECRAFT_DIR does not exist."
@@ -38,7 +44,10 @@ minecraft_start() {
     if ! session_running; then
         echo "Starting Minecraft server..."
         mkdir -p "$TMUX_SOCKET_DIR"
-        chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
+        try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
+        try_perm chmod -R u+rwX,g+rwX,o-rwx "$TMUX_SOCKET_DIR"
+        try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$MINECRAFT_DIR"
+        try_perm chmod -R u+rwX,g+rwX,o-rwx "$MINECRAFT_DIR"
         RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" new-session -d -s "$TMUX_SESSION" -c "$MINECRAFT_DIR" "$START_COMMAND"
         echo "Minecraft server started in detached tmux session '$TMUX_SESSION'."
         pid=$(RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" list-panes -t "$TMUX_SESSION" -F '#{pane_pid}')
@@ -52,9 +61,8 @@ minecraft_start() {
                 RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" server-access -a "$user"
             fi
         done
-        chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
-        chmod 660 "$TMUX_SOCKET_PATH"
-        chmod 770 "$TMUX_SOCKET_DIR"
+        try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
+        try_perm chmod -R u+rwX,g+rwX,o-rwx "$TMUX_SOCKET_DIR"
     else
         echo "A tmux session named '$TMUX_SESSION' is already running."
     fi
