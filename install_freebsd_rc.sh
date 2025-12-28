@@ -1,4 +1,5 @@
 #!/bin/sh
+# install_freebsd_rc.sh – Installer for Minecraft server on FreeBSD using rc.d
 
 # Exit on errors and undefined variables
 set -eu
@@ -27,38 +28,51 @@ done
 # Step 1: Install necessary packages
 echo "Installing necessary packages..."
 pkg update
-pkg install -y tmux openjdk22 wget
+pkg install -y tmux openjdk17 curl runit
 
-# Check if necessary commands are available
-command -v tmux >/dev/null 2>&1 || {
-    echo "tmux is required but it's not installed. Aborting." >&2
-    exit 1
-}
-command -v java >/dev/null 2>&1 || {
-    echo "java is required but it's not installed. Aborting." >&2
-    exit 1
-}
-command -v wget >/dev/null 2>&1 || {
-    echo "wget is required but it's not installed. Aborting." >&2
-    exit 1
-}
+# Verify required commands are available
+for cmd in tmux java curl chpst; do
+    command -v "$cmd" >/dev/null 2>&1 || {
+        echo "$cmd is required but not installed. Exiting."
+        exit 1
+    }
+done
 
-# Step 2: Copy the configuration file
-echo "Copying the configuration file..."
-cp "$LOCAL_CONFIG_FILE" "$CONFIG_FILE"
-chown root:wheel "$CONFIG_FILE"
-chmod 644 "$CONFIG_FILE"
+# Step 2: Ensure the configuration file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Copying the configuration file..."
+    cp "$LOCAL_CONFIG_FILE" "$CONFIG_FILE"
+fi
 
-# Step 3: Append necessary paths to the configuration file
-echo "Appending necessary paths to the configuration file..."
+# Step 3: Update necessary paths in the configuration file (idempotent)
+echo "Updating necessary paths in the configuration file..."
+CONFIG_BLOCK_START="# BEGIN MINECRAFT INSTALLER AUTO-CONFIG"
+CONFIG_BLOCK_END="# END MINECRAFT INSTALLER AUTO-CONFIG"
+temp_config=$(mktemp)
+
+awk -v start="$CONFIG_BLOCK_START" -v end="$CONFIG_BLOCK_END" '
+    $0 == start { skip = 1; next }
+    $0 == end { skip = 0; next }
+    !skip { print }
+' "$CONFIG_FILE" >"$temp_config"
+
 {
-    echo 'SERVICE_SCRIPT="/usr/local/etc/rc.d/minecraft"'
+    echo "$CONFIG_BLOCK_START"
+    echo 'RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
     echo "TMUX_PATH=$(command -v tmux)"
     echo "JAVA_PATH=$(command -v java)"
-    echo "RESOURCE_LIMIT_COMMAND=\"ulimit -u 256\""
-    echo "MINECRAFT_COMMAND=\"exec \$JAVA_PATH -Xmx\$MEMORY_ALLOCATION -Xms\$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar \$MINECRAFT_JAR nogui\""
-    echo "START_COMMAND=\"\$RESOURCE_LIMIT_COMMAND && \$MINECRAFT_COMMAND\""
-} >>"$CONFIG_FILE"
+    echo "CHPST_PATH=$(command -v chpst)"
+    echo 'RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+    # shellcheck disable=SC2016
+    echo 'MINECRAFT_COMMAND="exec $JAVA_PATH -Xmx$MEMORY_ALLOCATION -Xms$MEMORY_ALLOCATION -XX:+UseShenandoahGC -XX:+UseNUMA -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -jar $MINECRAFT_JAR nogui"'
+    # shellcheck disable=SC2016
+    echo 'START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
+    echo "$CONFIG_BLOCK_END"
+} >>"$temp_config"
+
+mv "$temp_config" "$CONFIG_FILE"
+chown root:wheel "$CONFIG_FILE"
+chmod 644 "$CONFIG_FILE"
 
 # Source the configuration file
 # shellcheck source=minecraft_config.sh
@@ -98,7 +112,7 @@ if [ $NODOWNLOAD -eq 0 ]; then
     read -r DOWNLOAD_URL
 
     echo "Downloading Minecraft server jar..."
-    if ! su "$MINECRAFT_USER" -c "wget -O $MINECRAFT_DIR/$MINECRAFT_JAR $DOWNLOAD_URL"; then
+    if ! "$CHPST_PATH" -u "$MINECRAFT_USER" curl -fLo "$MINECRAFT_DIR/$MINECRAFT_JAR" "$DOWNLOAD_URL"; then
         echo "Failed to download the Minecraft server jar. Exiting..."
         exit 1
     fi
@@ -108,18 +122,21 @@ fi
 
 # Step 6: Accept the Minecraft EULA
 echo "Accepting the Minecraft EULA..."
-su "$MINECRAFT_USER" -c "echo 'eula=true' >$MINECRAFT_DIR/eula.txt"
+if ! printf '%s\n' 'eula=true' | "$CHPST_PATH" -u "$MINECRAFT_USER" tee "$MINECRAFT_DIR/eula.txt" >/dev/null; then
+    echo "Failed to write the Minecraft EULA. Exiting..."
+    exit 1
+fi
 
 # Step 7: Copy the minecraft_service.sh script
 echo "Copying the minecraft_service.sh script..."
-cp minecraft_service.sh "$SERVICE_SH"
+cp minecraft_service.sh "$SERVICE_SCRIPT"
 
 # Make the minecraft_service.sh script executable
-chmod +x "$SERVICE_SH"
+chmod +x "$SERVICE_SCRIPT"
 
 # Step 8: Create the rc.d service script
 echo "Creating the rc.d service script..."
-tee "$SERVICE_SCRIPT" >/dev/null <<EOF
+tee "$RC_SCRIPT" >/dev/null <<EOF
 #!/bin/sh
 
 # PROVIDE: minecraft
@@ -137,15 +154,15 @@ load_rc_config \$name
 : \${minecraft_user:="$MINECRAFT_USER"}
 : \${minecraft_group:="$MINECRAFT_GROUP"}
 : \${minecraft_dir:="$MINECRAFT_DIR"}
-: \${service_sh:="$SERVICE_SH"}
+: \${service_script:="$SERVICE_SCRIPT"}
 
-start_cmd="\$service_sh start"
-stop_cmd="\$service_sh stop"
-status_cmd="\$service_sh status"
-log_cmd="\$service_sh log"
-attach_cmd="\$service_sh attach"
-cmd_cmd="\$service_sh cmd"
-reload_cmd="\$service_sh reload"
+start_cmd="\$service_script start"
+stop_cmd="\$service_script stop"
+status_cmd="\$service_script status"
+log_cmd="\$service_script log"
+attach_cmd="\$service_script attach"
+cmd_cmd="\$service_script cmd"
+reload_cmd="\$service_script reload"
 extra_commands="log attach cmd reload"
 
 run_rc_command "\$@"
@@ -153,13 +170,22 @@ EOF
 
 # Step 9: Make the rc.d service script executable and enable the service
 echo "Making the rc.d service script executable and enabling the Minecraft service..."
-chmod +x "$SERVICE_SCRIPT"
+chmod +x "$RC_SCRIPT"
 sysrc minecraft_enable="YES"
 
 # Step 10: Create the monitoring script
 echo "Creating the monitoring script..."
 tee "$MONITOR_SCRIPT" >/dev/null <<EOF
 #!/bin/sh
+
+# Exit on errors and undefined variables
+set -eu
+
+# Ensure the script is run as root
+if [ "\$(id -u)" -ne 0 ]; then
+    echo "\$(date): This script must be run as root. Use sudo or run as root."
+    exit 1
+fi
 
 # Source the configuration file
 . "$CONFIG_FILE"
@@ -181,6 +207,15 @@ chmod +x "$MONITOR_SCRIPT"
 echo "Creating the restart script..."
 tee "$RESTART_SCRIPT" >/dev/null <<EOF
 #!/bin/sh
+
+# Exit on errors and undefined variables
+set -eu
+
+# Ensure the script is run as root
+if [ "\$(id -u)" -ne 0 ]; then
+    echo "\$(date): This script must be run as root. Use sudo or run as root."
+    exit 1
+fi
 
 # Source the configuration file
 . "$CONFIG_FILE"
@@ -205,19 +240,17 @@ temp_crontab=$(mktemp)
 # Copy existing crontab to temp file
 echo "$current_crontab" >"$temp_crontab"
 
-# Only add the monitor cron job if it doesn't already exist
-if ! grep -q "$MONITOR_SCRIPT" "$temp_crontab"; then
-    echo "$monitor_cron" >>"$temp_crontab"
-else
-    echo "Monitor cron job already exists. Skipping..."
-fi
-
-# Only add the restart cron job if it doesn't already exist
-if ! grep -q "$RESTART_SCRIPT" "$temp_crontab"; then
-    echo "$restart_cron" >>"$temp_crontab"
-else
-    echo "Restart cron job already exists. Skipping..."
-fi
+for cron_entry in \
+    "$MONITOR_SCRIPT|$monitor_cron" \
+    "$RESTART_SCRIPT|$restart_cron"; do
+    script_path=${cron_entry%%|*}
+    cron_line=${cron_entry#*|}
+    if ! grep -q "$script_path" "$temp_crontab"; then
+        echo "$cron_line" >>"$temp_crontab"
+    else
+        echo "Cron job for $script_path already exists. Skipping..."
+    fi
+done
 
 # Install the new crontab
 crontab "$temp_crontab"

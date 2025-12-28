@@ -15,7 +15,14 @@ run_as_minecraft_user() {
     if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
         /bin/sh -c "$*"
     else
-        su "$MINECRAFT_USER" -c "$*"
+        if [ -z "${CHPST_PATH:-}" ]; then
+            CHPST_PATH=$(command -v chpst)
+        fi
+        if [ -z "${CHPST_PATH:-}" ]; then
+            echo "chpst is required but was not found in PATH." >&2
+            return 1
+        fi
+        "$CHPST_PATH" -u "$MINECRAFT_USER" /bin/sh -c "$*"
     fi
 }
 
