@@ -10,21 +10,24 @@ CONFIG_FILE="/etc/minecraft_config.sh"
 # shellcheck source=templates/config.sh.in
 . "$CONFIG_FILE"
 
-# Function to run a command as MINECRAFT_USER if the current user is not MINECRAFT_USER
-run_as_minecraft_user() {
-    if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
-        /bin/sh -c "$*"
-    else
-        if [ -z "${CHPST_PATH:-}" ]; then
-            CHPST_PATH=$(command -v chpst)
-        fi
-        if [ -z "${CHPST_PATH:-}" ]; then
-            echo "chpst is required but was not found in PATH." >&2
-            return 1
-        fi
-        "$CHPST_PATH" -u "$MINECRAFT_USER" /bin/sh -c "$*"
+# Run commands as the Minecraft user; skip chpst when already running as that user.
+if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
+    RUN_MINECRAFT_CMD() {
+        "$@"
+    }
+else
+    # Resolve chpst lazily so services running as root can drop privileges.
+    if [ -z "${CHPST_PATH:-}" ]; then
+        CHPST_PATH=$(command -v chpst)
     fi
-}
+    if [ -z "${CHPST_PATH:-}" ]; then
+        echo "chpst is required but was not found in PATH." >&2
+        exit 1
+    fi
+    RUN_MINECRAFT_CMD() {
+        "$CHPST_PATH" -u "$MINECRAFT_USER" -- "$@"
+    }
+fi
 
 minecraft_start() {
     if [ ! -d "$MINECRAFT_DIR" ]; then
@@ -36,9 +39,9 @@ minecraft_start() {
         echo "Starting Minecraft server..."
         mkdir -p "$TMUX_SOCKET_DIR"
         chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
-        run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH new-session -d -s $TMUX_SESSION -c $MINECRAFT_DIR \"$START_COMMAND\""
+        RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" new-session -d -s "$TMUX_SESSION" -c "$MINECRAFT_DIR" "$START_COMMAND"
         echo "Minecraft server started in detached tmux session '$TMUX_SESSION'."
-        pid=$(run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH list-panes -t $TMUX_SESSION -F '#{pane_pid}'")
+        pid=$(RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" list-panes -t "$TMUX_SESSION" -F '#{pane_pid}')
         if [ "$(echo "$pid" | wc -l)" -ne 1 ]; then
             echo "Failed to determine server PID, multiple active tmux sessions."
             return 1
@@ -46,7 +49,7 @@ minecraft_start() {
         printf "%s" "$pid" >"$PID_PATH"
         for user in $(getent group "$MINECRAFT_GROUP" | cut -d ':' -f 4 | tr ',' '\n'); do
             if [ "$user" != "$MINECRAFT_USER" ] && [ -n "$user" ]; then
-                run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH server-access -a \"$user\""
+                RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" server-access -a "$user"
             fi
         done
         chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
@@ -58,12 +61,12 @@ minecraft_start() {
 }
 
 session_running() {
-    run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH has-session -t $TMUX_SESSION" 2>/dev/null
+    RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" has-session -t "$TMUX_SESSION" 2>/dev/null
 }
 
 issue_cmd() {
     command="$*"
-    run_as_minecraft_user "$TMUX_PATH -S $TMUX_SOCKET_PATH send-keys -t $TMUX_SESSION.0 \"$command\" C-m"
+    RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" send-keys -t "$TMUX_SESSION.0" "$command" C-m
 }
 
 minecraft_stop() {
@@ -125,8 +128,8 @@ minecraft_log() {
 
 minecraft_attach() {
     if session_running; then
-        run_as_minecraft_user "TERM=screen-256color $TMUX_PATH -S $TMUX_SOCKET_PATH attach-session -t $TMUX_SESSION.0" ||
-            run_as_minecraft_user "TERM=screen $TMUX_PATH -S $TMUX_SOCKET_PATH attach-session -t $TMUX_SESSION.0"
+        RUN_MINECRAFT_CMD env TERM=screen-256color "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" attach-session -t "$TMUX_SESSION.0" ||
+            RUN_MINECRAFT_CMD env TERM=screen "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" attach-session -t "$TMUX_SESSION.0"
     else
         echo "No tmux session named '$TMUX_SESSION' is running."
     fi
