@@ -72,7 +72,7 @@ ubuntu | freebsd) ;;
 esac
 
 # Define the location of the config file
-CONFIG_FILE="/etc/minecraft_config.sh"
+CONFIG_FILE="/etc/minecraftcfg"
 
 SCRIPT_DIR=$(dirname "$0")
 TEMPLATE_DIR="$SCRIPT_DIR/templates"

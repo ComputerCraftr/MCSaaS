@@ -4,7 +4,7 @@
 set -eu
 
 # Define the location of the config file
-CONFIG_FILE="/etc/minecraft_config.sh"
+CONFIG_FILE="/etc/minecraftcfg"
 
 # Source the configuration file
 # shellcheck source=templates/config.sh.in
