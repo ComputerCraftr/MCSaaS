@@ -5,10 +5,10 @@
 set -eu
 
 usage() {
-    echo "Usage: $0 --os {Ubuntu|FreeBSD} [-nodl]"
+    echo "Usage: $0 --os {Ubuntu|FreeBSD} [--nodl]"
     echo "  --os        Target OS (Ubuntu or FreeBSD)"
     echo "  --url URL   Download URL for the Minecraft server jar"
-    echo "  -nodl       Skip downloading the Minecraft server jar"
+    echo "  --nodl      Skip downloading the Minecraft server jar"
     echo "  -h, --help  Show this help message"
 }
 
@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
         DOWNLOAD_URL="$2"
         shift 2
         ;;
-    -nodl)
+    --nodl)
         DOWNLOAD=0
         shift
         ;;
@@ -57,7 +57,7 @@ OS_INPUT="$OS"
 OS=$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')
 
 if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
-    echo "Cannot use --url with -nodl."
+    echo "Cannot use --url with --nodl."
     usage
     exit 1
 fi
@@ -240,7 +240,7 @@ echo "Setting ownership of the Minecraft server directory..."
 chown -R "$MINECRAFT_USER":"$MINECRAFT_GROUP" "$MINECRAFT_DIR"
 chmod 770 "$MINECRAFT_DIR"
 
-# Step 4: Download Minecraft server jar if not in -nodl mode
+# Step 4: Download Minecraft server jar if not in --nodl mode
 if [ $DOWNLOAD -ne 0 ]; then
     if [ -z "$DOWNLOAD_URL" ]; then
         echo "Please enter the download URL for the Minecraft server jar:"
@@ -253,7 +253,7 @@ if [ $DOWNLOAD -ne 0 ]; then
         exit 1
     fi
 else
-    echo "Skipping download of Minecraft server jar due to -nodl option."
+    echo "Skipping download of Minecraft server jar due to --nodl option."
 fi
 
 # Step 5: Accept the Minecraft EULA
