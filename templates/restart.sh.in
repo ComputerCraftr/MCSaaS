@@ -18,6 +18,6 @@ log() {
     @LOG_COMMAND@
 }
 
-log "$(date): Restarting Minecraft server..."
+log "Restarting Minecraft server..."
 @RESTART_COMMAND@
-log "$(date): Minecraft server restarted."
+log "Minecraft server restarted."

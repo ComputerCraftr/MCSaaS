@@ -285,7 +285,7 @@ freebsd)
         -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
         -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
         -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
-        "$TEMPLATE_DIR/rc.d.in" | tee "$RC_SCRIPT" >/dev/null
+        "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
     chmod +x "$RC_SCRIPT"
     ;;
 ubuntu)
@@ -295,7 +295,7 @@ ubuntu)
         -e "s|@MEMORY_ALLOCATION@|$ESC_MEMORY_ALLOCATION|g" \
         -e "s|@PID_PATH@|$ESC_PID_PATH|g" \
         -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
-        "$TEMPLATE_DIR/minecraft.service.in" | tee "$SERVICE_UNIT" >/dev/null
+        "$TEMPLATE_DIR/minecraft.service.in" >"$SERVICE_UNIT"
     ;;
 esac
 
@@ -322,7 +322,7 @@ sed -e "s|@CONFIG_FILE@|$(escape_sed_replacement "$CONFIG_FILE")|g" \
     -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@STATUS_COMMAND@|$(escape_sed_replacement "$STATUS_COMMAND")|g" \
     -e "s|@START_COMMAND@|$(escape_sed_replacement "$START_COMMAND")|g" \
-    "$TEMPLATE_DIR/monitor.sh.in" | tee "$MONITOR_SCRIPT" >/dev/null
+    "$TEMPLATE_DIR/monitor.sh.in" >"$MONITOR_SCRIPT"
 
 chmod +x "$MONITOR_SCRIPT"
 
@@ -342,7 +342,7 @@ esac
 sed -e "s|@CONFIG_FILE@|$(escape_sed_replacement "$CONFIG_FILE")|g" \
     -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@RESTART_COMMAND@|$(escape_sed_replacement "$RESTART_COMMAND")|g" \
-    "$TEMPLATE_DIR/restart.sh.in" | tee "$RESTART_SCRIPT" >/dev/null
+    "$TEMPLATE_DIR/restart.sh.in" >"$RESTART_SCRIPT"
 
 chmod +x "$RESTART_SCRIPT"
 

@@ -20,9 +20,9 @@ log() {
 
 # Check the status of the Minecraft server
 if ! @STATUS_COMMAND@; then
-    log "$(date): Minecraft server is down. Restarting..."
+    log "Minecraft server is down. Restarting..."
     @START_COMMAND@
-    log "$(date): Minecraft server started."
+    log "Minecraft server started."
 else
-    log "$(date): Minecraft server is running."
+    log "Minecraft server is running."
 fi
