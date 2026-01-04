@@ -237,8 +237,8 @@ if [ ! -d "$MINECRAFT_DIR" ]; then
 fi
 
 echo "Setting ownership of the Minecraft server directory..."
-chown -R "$MINECRAFT_USER":"$MINECRAFT_GROUP" "$MINECRAFT_DIR"
-chmod 770 "$MINECRAFT_DIR"
+chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$MINECRAFT_DIR"
+chmod -R u+rwX,g+rwX,o-rwx "$MINECRAFT_DIR"
 
 # Step 4: Download Minecraft server jar if not in --nodl mode
 if [ $DOWNLOAD -ne 0 ]; then
