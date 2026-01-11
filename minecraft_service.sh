@@ -43,19 +43,39 @@ minecraft_start() {
 
     if ! session_running; then
         echo "Starting Minecraft server..."
+
+        # Prepare the tmux socket for the new session
         mkdir -p "$TMUX_SOCKET_DIR"
         try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
         try_perm chmod -R u+rwX,g+rwX,o-rwx "$TMUX_SOCKET_DIR"
         try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$MINECRAFT_DIR"
         try_perm chmod -R u+rwX,g+rwX,o-rwx "$MINECRAFT_DIR"
-        RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" new-session -d -s "$TMUX_SESSION" -c "$MINECRAFT_DIR" "$START_COMMAND"
+
+        # Start the Minecraft server
+        if [ "$RUNIT_WAIT" -eq 1 ]; then
+            tmux_start_command="$START_COMMAND"
+            # Strip any leading exec so that we can notify tmux later
+            case "$tmux_start_command" in
+            "exec "*)
+                tmux_start_command=${tmux_start_command#exec }
+                ;;
+            esac
+            tmux_start_command="$tmux_start_command; \"$TMUX_PATH\" -S \"$TMUX_SOCKET_PATH\" wait-for -S \"exit-$TMUX_SESSION\""
+            RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" new-session -d -s "$TMUX_SESSION" -c "$MINECRAFT_DIR" /bin/sh -c "$tmux_start_command"
+        else
+            RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" new-session -d -s "$TMUX_SESSION" -c "$MINECRAFT_DIR" "$START_COMMAND"
+        fi
         echo "Minecraft server started in detached tmux session '$TMUX_SESSION'."
+
+        # Get the server PID
         pid=$(RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" list-panes -t "$TMUX_SESSION" -F '#{pane_pid}')
         if [ "$(echo "$pid" | wc -l)" -ne 1 ]; then
             echo "Failed to determine server PID, multiple active tmux sessions."
             return 1
         fi
         printf "%s" "$pid" >"$PID_PATH"
+
+        # Allow group access to the tmux session
         for user in $(getent group "$MINECRAFT_GROUP" | cut -d ':' -f 4 | tr ',' '\n'); do
             if [ "$user" != "$MINECRAFT_USER" ] && [ -n "$user" ]; then
                 RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" server-access -a "$user"
@@ -63,8 +83,26 @@ minecraft_start() {
         done
         try_perm chown -R "$MINECRAFT_USER:$MINECRAFT_GROUP" "$TMUX_SOCKET_DIR"
         try_perm chmod -R u+rwX,g+rwX,o-rwx "$TMUX_SOCKET_DIR"
+
+        # Wait for the tmux exit signal in order to allow process supervision
+        if [ "$RUNIT_WAIT" -eq 1 ]; then
+            runit_cleanup() {
+                rc=$?
+                if [ -n "${wait_pid:-}" ]; then
+                    kill "$wait_pid" 2>/dev/null || true
+                    wait "$wait_pid" 2>/dev/null || true
+                fi
+                minecraft_stop || rc=$?
+                exit $rc
+            }
+            trap runit_cleanup INT TERM HUP
+            RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" wait-for "exit-$TMUX_SESSION" &
+            wait_pid=$!
+            wait "$wait_pid"
+        fi
     else
         echo "A tmux session named '$TMUX_SESSION' is already running."
+        return 1
     fi
 }
 
@@ -81,11 +119,11 @@ minecraft_stop() {
     if ! session_running; then
         echo "The server is already stopped."
         if [ -f "$PID_PATH" ]; then
+            # Return any nonzero status of the rm command
             rm "$PID_PATH"
-            return $? # Return the status of the rm command
-        else
-            return 0 # Return 0 if the PID file does not exist
         fi
+        # Return 0 if the PID file does not exist
+        return 0
     fi
 
     # Warn players with a 20-second countdown
@@ -119,10 +157,8 @@ minecraft_stop() {
 
     echo "Server stopped successfully."
     if [ -f "$PID_PATH" ]; then
+        # Return any nonzero status of the rm command
         rm "$PID_PATH"
-        return $? # Return the status of the rm command
-    else
-        return 0 # Return 0 if the PID file does not exist
     fi
 }
 
@@ -131,6 +167,7 @@ minecraft_log() {
         tail -f "$MINECRAFT_DIR/logs/latest.log"
     else
         echo "Log file does not exist."
+        return 1
     fi
 }
 
@@ -140,13 +177,14 @@ minecraft_attach() {
             RUN_MINECRAFT_CMD env TERM=screen "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" attach-session -t "$TMUX_SESSION.0"
     else
         echo "No tmux session named '$TMUX_SESSION' is running."
+        return 1
     fi
 }
 
 minecraft_cmd() {
     if [ $# -eq 0 ]; then
         echo "No command provided. Usage: $0 cmd '<command>'"
-        return 1
+        return 2
     fi
 
     command="$*"
@@ -155,6 +193,7 @@ minecraft_cmd() {
         echo "Command '$command' sent to Minecraft server."
     else
         echo "No tmux session named '$TMUX_SESSION' is running."
+        return 1
     fi
 }
 
@@ -164,6 +203,7 @@ minecraft_reload() {
         echo "Reload command sent to Minecraft server."
     else
         echo "No tmux session named '$TMUX_SESSION' is running."
+        return 1
     fi
 }
 
@@ -175,7 +215,21 @@ minecraft_status() {
     fi
 }
 
+RUNIT_WAIT=0
 case "$1" in
+--runit)
+    shift
+    case "$1" in
+    start)
+        RUNIT_WAIT=1
+        minecraft_start
+        ;;
+    *)
+        echo "Usage: $0 [--runit] start"
+        exit 2
+        ;;
+    esac
+    ;;
 start)
     minecraft_start
     ;;
@@ -199,7 +253,7 @@ status)
     minecraft_status
     ;;
 *)
-    echo "Usage: $0 {start|stop|log|attach|cmd|reload|status}"
+    echo "Usage: $0 [--runit] start | $0 {stop|log|attach|cmd|reload|status}"
     exit 2
     ;;
 esac

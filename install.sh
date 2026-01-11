@@ -1,12 +1,12 @@
 #!/bin/sh
-# install.sh – Installer for Minecraft server on Ubuntu/Debian/FreeBSD
+# install.sh – Installer for Minecraft server on Ubuntu/Debian/FreeBSD/Void Linux
 
 # Exit on errors and undefined variables
 set -eu
 
 usage() {
-    echo "Usage: $0 --os {Ubuntu|Debian|FreeBSD} [--nodl]"
-    echo "  --os        Target OS (Ubuntu, Debian, or FreeBSD)"
+    echo "Usage: $0 --os {Ubuntu|Debian|FreeBSD|Void} [--nodl]"
+    echo "  --os        Target OS (Ubuntu, Debian, FreeBSD, or Void)"
     echo "  --url URL   Download URL for the Minecraft server jar"
     echo "  --nodl      Skip downloading the Minecraft server jar"
     echo "  -h, --help  Show this help message"
@@ -67,7 +67,7 @@ if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
 fi
 
 case "$OS" in
-debian | freebsd) ;;
+debian | freebsd | void) ;;
 *)
     echo "Unsupported OS: $OS_INPUT"
     usage
@@ -97,7 +97,7 @@ user_exists() {
 add_group() {
     name="$1"
     case "$OS" in
-    debian) groupadd "$name" ;;
+    debian | void) groupadd "$name" ;;
     freebsd) pw groupadd -n "$name" -q ;;
     esac
 }
@@ -113,6 +113,10 @@ add_user() {
         pw useradd -n "$name" -s /bin/sh -d "$MINECRAFT_DIR" -m -c "Minecraft Server User" \
             -g "$MINECRAFT_GROUP" -w no -q
         ;;
+    void)
+        useradd -r -s /bin/sh -d "$MINECRAFT_DIR" -m -c "Minecraft Server User" \
+            -g "$MINECRAFT_GROUP" "$name"
+        ;;
     esac
 }
 
@@ -120,7 +124,7 @@ add_user_to_group() {
     user="$1"
     group="$2"
     case "$OS" in
-    debian) usermod -aG "$group" "$user" ;;
+    debian | void) usermod -aG "$group" "$user" ;;
     freebsd) pw groupmod -n "$group" -m "$user" -q ;;
     esac
 }
@@ -135,6 +139,9 @@ install_packages() {
         pkg update
         pkg install -y tmux openjdk17 curl runit
         ;;
+    void)
+        xbps-install -Suy tmux openjdk17 curl runit
+        ;;
     esac
 }
 
@@ -147,13 +154,19 @@ enable_service() {
     freebsd)
         sysrc minecraft_enable="YES"
         ;;
+    void)
+        mkdir -p /var/service
+        ln -sf "$RUNIT_SERVICE_DIR" /var/service
+        ;;
     esac
 }
 
 start_message() {
+    START_MESSAGE_PREFIX="You can start the Minecraft server with: "
     case "$OS" in
-    debian) echo "You can start the Minecraft server with: sudo systemctl start minecraft.service" ;;
-    freebsd) echo "You can start the Minecraft server with: sudo service minecraft start" ;;
+    debian) echo "${START_MESSAGE_PREFIX}sudo systemctl start minecraft.service" ;;
+    freebsd) echo "${START_MESSAGE_PREFIX}sudo service minecraft start" ;;
+    void) echo "${START_MESSAGE_PREFIX}sudo sv up minecraft" ;;
     esac
 }
 
@@ -186,6 +199,12 @@ debian)
     RESOURCE_LIMIT_LINE=""
     # shellcheck disable=SC2016
     START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
+    ;;
+void)
+    SERVICE_LINE='RUNIT_SERVICE_DIR="/etc/sv/minecraft"'
+    RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+    # shellcheck disable=SC2016
+    START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
     ;;
 esac
 
@@ -301,6 +320,12 @@ debian)
         -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
         "$TEMPLATE_DIR/minecraft.service.in" >"$SERVICE_UNIT"
     ;;
+void)
+    mkdir -p "$RUNIT_SERVICE_DIR"
+    sed -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
+        "$TEMPLATE_DIR/runit.run.in" >"$RUNIT_SERVICE_DIR/run"
+    chmod +x "$RUNIT_SERVICE_DIR/run"
+    ;;
 esac
 
 # Step 8: Enable the service
@@ -319,6 +344,11 @@ debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
     STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
     START_COMMAND='systemctl start minecraft.service'
+    ;;
+void)
+    LOG_COMMAND='logger -t minecraft-monitor "$*"'
+    STATUS_COMMAND='sv status minecraft | grep -q "^run:"'
+    START_COMMAND='sv up minecraft'
     ;;
 esac
 
@@ -341,6 +371,10 @@ debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
     RESTART_COMMAND='systemctl restart minecraft.service'
     ;;
+void)
+    LOG_COMMAND='logger -t minecraft-restart "$*"'
+    RESTART_COMMAND='sv restart minecraft'
+    ;;
 esac
 
 sed -e "s|@CONFIG_FILE@|$(escape_sed_replacement "$CONFIG_FILE")|g" \
@@ -362,9 +396,19 @@ temp_crontab=$(mktemp)
 # Copy existing crontab to temp file
 echo "$current_crontab" >"$temp_crontab"
 
-for cron_entry in \
-    "$MONITOR_SCRIPT|$monitor_cron" \
-    "$RESTART_SCRIPT|$restart_cron"; do
+cron_entries=""
+case "$OS" in
+void)
+    cron_entries="$RESTART_SCRIPT|$restart_cron"
+    ;;
+*)
+    cron_entries="$MONITOR_SCRIPT|$monitor_cron
+$RESTART_SCRIPT|$restart_cron"
+    ;;
+esac
+
+printf "%s\n" "$cron_entries" | while IFS= read -r cron_entry; do
+    [ -z "$cron_entry" ] && continue
     script_path=${cron_entry%%|*}
     cron_line=${cron_entry#*|}
     if ! grep -q "$script_path" "$temp_crontab"; then

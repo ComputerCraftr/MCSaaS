@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "@SERVICE_SCRIPT@" --runit start
