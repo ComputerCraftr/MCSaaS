@@ -1,12 +1,12 @@
 #!/bin/sh
-# install.sh – Installer for Minecraft server on Ubuntu/FreeBSD
+# install.sh – Installer for Minecraft server on Ubuntu/Debian/FreeBSD
 
 # Exit on errors and undefined variables
 set -eu
 
 usage() {
-    echo "Usage: $0 --os {Ubuntu|FreeBSD} [--nodl]"
-    echo "  --os        Target OS (Ubuntu or FreeBSD)"
+    echo "Usage: $0 --os {Ubuntu|Debian|FreeBSD} [--nodl]"
+    echo "  --os        Target OS (Ubuntu, Debian, or FreeBSD)"
     echo "  --url URL   Download URL for the Minecraft server jar"
     echo "  --nodl      Skip downloading the Minecraft server jar"
     echo "  -h, --help  Show this help message"
@@ -56,6 +56,10 @@ fi
 OS_INPUT="$OS"
 OS=$(printf '%s' "$OS" | tr '[:upper:]' '[:lower:]')
 
+if [ "$OS" = "ubuntu" ]; then
+    OS="debian"
+fi
+
 if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
     echo "Cannot use --url with --nodl."
     usage
@@ -63,7 +67,7 @@ if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
 fi
 
 case "$OS" in
-ubuntu | freebsd) ;;
+debian | freebsd) ;;
 *)
     echo "Unsupported OS: $OS_INPUT"
     usage
@@ -93,7 +97,7 @@ user_exists() {
 add_group() {
     name="$1"
     case "$OS" in
-    ubuntu) groupadd "$name" ;;
+    debian) groupadd "$name" ;;
     freebsd) pw groupadd -n "$name" -q ;;
     esac
 }
@@ -101,7 +105,7 @@ add_group() {
 add_user() {
     name="$1"
     case "$OS" in
-    ubuntu)
+    debian)
         adduser --system --shell /bin/sh --home "$MINECRAFT_DIR" --gecos "Minecraft Server User" \
             --ingroup "$MINECRAFT_GROUP" --disabled-login "$name"
         ;;
@@ -116,14 +120,14 @@ add_user_to_group() {
     user="$1"
     group="$2"
     case "$OS" in
-    ubuntu) usermod -aG "$group" "$user" ;;
+    debian) usermod -aG "$group" "$user" ;;
     freebsd) pw groupmod -n "$group" -m "$user" -q ;;
     esac
 }
 
 install_packages() {
     case "$OS" in
-    ubuntu)
+    debian)
         apt update
         apt install -y tmux openjdk-17-jdk-headless curl runit
         ;;
@@ -136,7 +140,7 @@ install_packages() {
 
 enable_service() {
     case "$OS" in
-    ubuntu)
+    debian)
         systemctl daemon-reload
         systemctl enable minecraft.service
         ;;
@@ -148,7 +152,7 @@ enable_service() {
 
 start_message() {
     case "$OS" in
-    ubuntu) echo "You can start the Minecraft server with: sudo systemctl start minecraft.service" ;;
+    debian) echo "You can start the Minecraft server with: sudo systemctl start minecraft.service" ;;
     freebsd) echo "You can start the Minecraft server with: sudo service minecraft start" ;;
     esac
 }
@@ -177,7 +181,7 @@ freebsd)
     # shellcheck disable=SC2016
     START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
     ;;
-ubuntu)
+debian)
     SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
     RESOURCE_LIMIT_LINE=""
     # shellcheck disable=SC2016
@@ -288,7 +292,7 @@ freebsd)
         "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
     chmod +x "$RC_SCRIPT"
     ;;
-ubuntu)
+debian)
     sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
         -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
         -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
@@ -311,7 +315,7 @@ freebsd)
     STATUS_COMMAND='service minecraft status | grep -q "Minecraft server is running"'
     START_COMMAND='service minecraft start'
     ;;
-ubuntu)
+debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
     STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
     START_COMMAND='systemctl start minecraft.service'
@@ -333,7 +337,7 @@ freebsd)
     LOG_COMMAND='logger -t minecraft-restart "$*"'
     RESTART_COMMAND='service minecraft restart'
     ;;
-ubuntu)
+debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
     RESTART_COMMAND='systemctl restart minecraft.service'
     ;;
