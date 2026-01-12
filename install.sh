@@ -5,8 +5,9 @@
 set -eu
 
 usage() {
-    echo "Usage: $0 --os {Ubuntu|Debian|FreeBSD|Void} [--nodl]"
+    echo "Usage: $0 --os {Ubuntu|Debian|FreeBSD|Void} [--runit] [--nodl]"
     echo "  --os        Target OS (Ubuntu, Debian, FreeBSD, or Void)"
+    echo "  --runit     Use runit instead of the default init system"
     echo "  --url URL   Download URL for the Minecraft server jar"
     echo "  --nodl      Skip downloading the Minecraft server jar"
     echo "  -h, --help  Show this help message"
@@ -21,11 +22,16 @@ fi
 OS=""
 DOWNLOAD=1
 DOWNLOAD_URL=""
+USE_RUNIT=0
 while [ $# -gt 0 ]; do
     case "$1" in
     --os)
         OS="$2"
         shift 2
+        ;;
+    --runit)
+        USE_RUNIT=1
+        shift
         ;;
     --url)
         DOWNLOAD_URL="$2"
@@ -77,6 +83,7 @@ esac
 
 # Define the location of the config file
 CONFIG_FILE="/etc/minecraftcfg"
+RUNIT_SERVICE_DIR="/etc/sv/minecraft"
 
 SCRIPT_DIR=$(dirname "$0")
 TEMPLATE_DIR="$SCRIPT_DIR/templates"
@@ -143,6 +150,18 @@ install_packages() {
 }
 
 enable_service() {
+    if [ -d /etc/service ]; then
+        RUNIT_SERVICE_LINK_DIR="/etc/service"
+    else
+        RUNIT_SERVICE_LINK_DIR="/var/service"
+    fi
+
+    if [ "$USE_RUNIT" -eq 1 ]; then
+        mkdir -p "$RUNIT_SERVICE_LINK_DIR"
+        ln -sf "$RUNIT_SERVICE_DIR" "$RUNIT_SERVICE_LINK_DIR"
+        return
+    fi
+
     case "$OS" in
     debian)
         systemctl daemon-reload
@@ -152,14 +171,20 @@ enable_service() {
         sysrc minecraft_enable="YES"
         ;;
     void)
-        mkdir -p /var/service
-        ln -sf "$RUNIT_SERVICE_DIR" /var/service
+        mkdir -p "$RUNIT_SERVICE_LINK_DIR"
+        ln -sf "$RUNIT_SERVICE_DIR" "$RUNIT_SERVICE_LINK_DIR"
         ;;
     esac
 }
 
 start_message() {
     START_MESSAGE_PREFIX="You can start the Minecraft server with: "
+
+    if [ "$USE_RUNIT" -eq 1 ]; then
+        echo "${START_MESSAGE_PREFIX}sudo sv up minecraft"
+        return
+    fi
+
     case "$OS" in
     debian) echo "${START_MESSAGE_PREFIX}sudo systemctl start minecraft.service" ;;
     freebsd) echo "${START_MESSAGE_PREFIX}sudo service minecraft start" ;;
@@ -172,7 +197,12 @@ echo "Installing necessary packages..."
 install_packages
 
 # Verify required commands are available
-for cmd in tmux java curl chpst; do
+required_cmds="tmux java curl chpst"
+if [ "$USE_RUNIT" -eq 1 ] || [ "$OS" = "void" ]; then
+    required_cmds="$required_cmds sv logger"
+fi
+
+for cmd in $required_cmds; do
     command -v "$cmd" >/dev/null 2>&1 || {
         echo "$cmd is required but not installed. Exiting."
         exit 1
@@ -187,20 +217,24 @@ CONFIG_OWNER="root:$(id -gn 0)"
 RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
 # shellcheck disable=SC2016
 START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
-case "$OS" in
-debian)
-    SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
-    RESOURCE_LIMIT_LINE=""
-    # shellcheck disable=SC2016
-    START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
-    ;;
-freebsd)
-    SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
-    ;;
-void)
-    SERVICE_LINE='RUNIT_SERVICE_DIR="/etc/sv/minecraft"'
-    ;;
-esac
+if [ "$USE_RUNIT" -eq 1 ]; then
+    SERVICE_LINE="RUNIT_SERVICE_DIR=\"$RUNIT_SERVICE_DIR\""
+else
+    case "$OS" in
+    debian)
+        SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
+        RESOURCE_LIMIT_LINE=""
+        # shellcheck disable=SC2016
+        START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
+        ;;
+    freebsd)
+        SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
+        ;;
+    void)
+        SERVICE_LINE="RUNIT_SERVICE_DIR=\"$RUNIT_SERVICE_DIR\""
+        ;;
+    esac
+fi
 
 TMUX_PATH=$(command -v tmux)
 JAVA_PATH=$(command -v java)
@@ -296,31 +330,38 @@ ESC_MEMORY_ALLOCATION=$(escape_sed_replacement "$MEMORY_ALLOCATION")
 ESC_PID_PATH=$(escape_sed_replacement "$PID_PATH")
 ESC_SERVICE_SCRIPT=$(escape_sed_replacement "$SERVICE_SCRIPT")
 
-case "$OS" in
-debian)
-    sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
-        -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
-        -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
-        -e "s|@MEMORY_ALLOCATION@|$ESC_MEMORY_ALLOCATION|g" \
-        -e "s|@PID_PATH@|$ESC_PID_PATH|g" \
-        -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
-        "$TEMPLATE_DIR/minecraft.service.in" >"$SERVICE_UNIT"
-    ;;
-freebsd)
-    sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
-        -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
-        -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
-        -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
-        "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
-    chmod +x "$RC_SCRIPT"
-    ;;
-void)
+if [ "$USE_RUNIT" -eq 1 ]; then
     mkdir -p "$RUNIT_SERVICE_DIR"
     sed -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
         "$TEMPLATE_DIR/runit.run.in" >"$RUNIT_SERVICE_DIR/run"
     chmod +x "$RUNIT_SERVICE_DIR/run"
-    ;;
-esac
+else
+    case "$OS" in
+    debian)
+        sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
+            -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
+            -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
+            -e "s|@MEMORY_ALLOCATION@|$ESC_MEMORY_ALLOCATION|g" \
+            -e "s|@PID_PATH@|$ESC_PID_PATH|g" \
+            -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
+            "$TEMPLATE_DIR/minecraft.service.in" >"$SERVICE_UNIT"
+        ;;
+    freebsd)
+        sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
+            -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
+            -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
+            -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
+            "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
+        chmod +x "$RC_SCRIPT"
+        ;;
+    void)
+        mkdir -p "$RUNIT_SERVICE_DIR"
+        sed -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
+            "$TEMPLATE_DIR/runit.run.in" >"$RUNIT_SERVICE_DIR/run"
+        chmod +x "$RUNIT_SERVICE_DIR/run"
+        ;;
+    esac
+fi
 
 # Step 8: Enable the service
 echo "Enabling the Minecraft service..."
@@ -330,21 +371,26 @@ enable_service
 echo "Creating the monitoring script..."
 
 LOG_COMMAND='logger -t minecraft-monitor "$*"'
-case "$OS" in
-debian)
-    LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
-    STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
-    START_COMMAND='systemctl start minecraft.service'
-    ;;
-freebsd)
-    STATUS_COMMAND='service minecraft status | grep -q "Minecraft server is running"'
-    START_COMMAND='service minecraft start'
-    ;;
-void)
+if [ "$USE_RUNIT" -eq 1 ]; then
     STATUS_COMMAND='sv status minecraft | grep -q "^run:"'
     START_COMMAND='sv up minecraft'
-    ;;
-esac
+else
+    case "$OS" in
+    debian)
+        LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
+        STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
+        START_COMMAND='systemctl start minecraft.service'
+        ;;
+    freebsd)
+        STATUS_COMMAND='service minecraft status | grep -qF "Minecraft server is running"'
+        START_COMMAND='service minecraft start'
+        ;;
+    void)
+        STATUS_COMMAND='sv status minecraft | grep -q "^run:"'
+        START_COMMAND='sv up minecraft'
+        ;;
+    esac
+fi
 
 sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@STATUS_COMMAND@|$(escape_sed_replacement "$STATUS_COMMAND")|g" \
@@ -357,18 +403,22 @@ chmod +x "$MONITOR_SCRIPT"
 echo "Creating the restart script..."
 
 LOG_COMMAND='logger -t minecraft-restart "$*"'
-case "$OS" in
-debian)
-    LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
-    RESTART_COMMAND='systemctl restart minecraft.service'
-    ;;
-freebsd)
-    RESTART_COMMAND='service minecraft restart'
-    ;;
-void)
+if [ "$USE_RUNIT" -eq 1 ]; then
     RESTART_COMMAND='sv restart minecraft'
-    ;;
-esac
+else
+    case "$OS" in
+    debian)
+        LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
+        RESTART_COMMAND='systemctl restart minecraft.service'
+        ;;
+    freebsd)
+        RESTART_COMMAND='service minecraft restart'
+        ;;
+    void)
+        RESTART_COMMAND='sv restart minecraft'
+        ;;
+    esac
+fi
 
 sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@RESTART_COMMAND@|$(escape_sed_replacement "$RESTART_COMMAND")|g" \
@@ -389,21 +439,18 @@ temp_crontab=$(mktemp)
 echo "$current_crontab" >"$temp_crontab"
 
 cron_entries=""
-case "$OS" in
-void)
+if [ "$USE_RUNIT" -eq 1 ] || [ "$OS" = "void" ]; then
     cron_entries="$RESTART_SCRIPT|$restart_cron"
-    ;;
-*)
+else
     cron_entries="$MONITOR_SCRIPT|$monitor_cron
 $RESTART_SCRIPT|$restart_cron"
-    ;;
-esac
+fi
 
 printf "%s\n" "$cron_entries" | while IFS= read -r cron_entry; do
     [ -z "$cron_entry" ] && continue
     script_path=${cron_entry%%|*}
     cron_line=${cron_entry#*|}
-    if ! grep -q "$script_path" "$temp_crontab"; then
+    if ! grep -qF "$script_path" "$temp_crontab"; then
         echo "$cron_line" >>"$temp_crontab"
     else
         echo "Cron job for $script_path already exists. Skipping..."
