@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
     *)
         echo "Unknown argument: $1"
         usage
-        exit 1
+        exit 2
         ;;
     esac
 done
@@ -50,7 +50,7 @@ done
 if [ -z "$OS" ]; then
     echo "Missing required --os flag."
     usage
-    exit 1
+    exit 2
 fi
 
 OS_INPUT="$OS"
@@ -63,7 +63,7 @@ fi
 if [ "$DOWNLOAD" -eq 0 ] && [ -n "$DOWNLOAD_URL" ]; then
     echo "Cannot use --url with --nodl."
     usage
-    exit 1
+    exit 2
 fi
 
 case "$OS" in
@@ -71,7 +71,7 @@ debian | freebsd | void) ;;
 *)
     echo "Unsupported OS: $OS_INPUT"
     usage
-    exit 1
+    exit 2
     ;;
 esac
 
