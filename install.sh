@@ -98,7 +98,7 @@ add_group() {
     name="$1"
     case "$OS" in
     debian | void) groupadd "$name" ;;
-    freebsd) pw groupadd -n "$name" -q ;;
+    freebsd) pw groupadd -n "$name" ;;
     esac
 }
 
@@ -106,16 +106,13 @@ add_user() {
     name="$1"
     case "$OS" in
     debian)
-        adduser --system --shell /bin/sh --home "$MINECRAFT_DIR" --gecos "Minecraft Server User" \
-            --ingroup "$MINECRAFT_GROUP" --disabled-login "$name"
+        adduser --ingroup "$MINECRAFT_GROUP" --home "$MINECRAFT_DIR" --system --disabled-login --shell /bin/sh --comment "Minecraft Server User" "$name"
         ;;
     freebsd)
-        pw useradd -n "$name" -s /bin/sh -d "$MINECRAFT_DIR" -m -c "Minecraft Server User" \
-            -g "$MINECRAFT_GROUP" -w no -q
+        pw useradd -g "$MINECRAFT_GROUP" -d "$MINECRAFT_DIR" -m -w no -s /bin/sh -c "Minecraft Server User" -n "$name"
         ;;
     void)
-        useradd -r -s /bin/sh -d "$MINECRAFT_DIR" -m -c "Minecraft Server User" \
-            -g "$MINECRAFT_GROUP" "$name"
+        useradd -g "$MINECRAFT_GROUP" -d "$MINECRAFT_DIR" -m -r -s /bin/sh -c "Minecraft Server User" "$name"
         ;;
     esac
 }
@@ -125,7 +122,7 @@ add_user_to_group() {
     group="$2"
     case "$OS" in
     debian | void) usermod -aG "$group" "$user" ;;
-    freebsd) pw groupmod -n "$group" -m "$user" -q ;;
+    freebsd) pw groupmod -n "$group" -m "$user" ;;
     esac
 }
 
@@ -133,14 +130,14 @@ install_packages() {
     case "$OS" in
     debian)
         apt update
-        apt install -y tmux openjdk-17-jdk-headless curl runit
+        apt install -y tmux curl runit openjdk-17-jre-headless
         ;;
     freebsd)
         pkg update
-        pkg install -y tmux openjdk17 curl runit
+        pkg install -y tmux curl runit openjdk17-jre
         ;;
     void)
-        xbps-install -Suy tmux openjdk17 curl runit
+        xbps-install -Suy tmux curl runit openjdk17-jre
         ;;
     esac
 }
@@ -187,24 +184,21 @@ echo "Rendering the configuration file..."
 temp_config=$(mktemp)
 
 CONFIG_OWNER="root:$(id -gn 0)"
+RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+# shellcheck disable=SC2016
+START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
 case "$OS" in
-freebsd)
-    SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
-    RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
-    # shellcheck disable=SC2016
-    START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
-    ;;
 debian)
     SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
     RESOURCE_LIMIT_LINE=""
     # shellcheck disable=SC2016
     START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
     ;;
+freebsd)
+    SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
+    ;;
 void)
     SERVICE_LINE='RUNIT_SERVICE_DIR="/etc/sv/minecraft"'
-    RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
-    # shellcheck disable=SC2016
-    START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
     ;;
 esac
 
@@ -303,14 +297,6 @@ ESC_PID_PATH=$(escape_sed_replacement "$PID_PATH")
 ESC_SERVICE_SCRIPT=$(escape_sed_replacement "$SERVICE_SCRIPT")
 
 case "$OS" in
-freebsd)
-    sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
-        -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
-        -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
-        -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
-        "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
-    chmod +x "$RC_SCRIPT"
-    ;;
 debian)
     sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
         -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
@@ -319,6 +305,14 @@ debian)
         -e "s|@PID_PATH@|$ESC_PID_PATH|g" \
         -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
         "$TEMPLATE_DIR/minecraft.service.in" >"$SERVICE_UNIT"
+    ;;
+freebsd)
+    sed -e "s|@MINECRAFT_USER@|$ESC_MINECRAFT_USER|g" \
+        -e "s|@MINECRAFT_GROUP@|$ESC_MINECRAFT_GROUP|g" \
+        -e "s|@MINECRAFT_DIR@|$ESC_MINECRAFT_DIR|g" \
+        -e "s|@SERVICE_SCRIPT@|$ESC_SERVICE_SCRIPT|g" \
+        "$TEMPLATE_DIR/rc.d.in" >"$RC_SCRIPT"
+    chmod +x "$RC_SCRIPT"
     ;;
 void)
     mkdir -p "$RUNIT_SERVICE_DIR"
@@ -334,19 +328,19 @@ enable_service
 
 # Step 9: Create the monitoring script
 echo "Creating the monitoring script..."
+
+LOG_COMMAND='logger -t minecraft-monitor "$*"'
 case "$OS" in
-freebsd)
-    LOG_COMMAND='logger -t minecraft-monitor "$*"'
-    STATUS_COMMAND='service minecraft status | grep -q "Minecraft server is running"'
-    START_COMMAND='service minecraft start'
-    ;;
 debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-monitor'
     STATUS_COMMAND='systemctl is-active --quiet minecraft.service'
     START_COMMAND='systemctl start minecraft.service'
     ;;
+freebsd)
+    STATUS_COMMAND='service minecraft status | grep -q "Minecraft server is running"'
+    START_COMMAND='service minecraft start'
+    ;;
 void)
-    LOG_COMMAND='logger -t minecraft-monitor "$*"'
     STATUS_COMMAND='sv status minecraft | grep -q "^run:"'
     START_COMMAND='sv up minecraft'
     ;;
@@ -361,17 +355,17 @@ chmod +x "$MONITOR_SCRIPT"
 
 # Step 10: Create the restart script
 echo "Creating the restart script..."
+
+LOG_COMMAND='logger -t minecraft-restart "$*"'
 case "$OS" in
-freebsd)
-    LOG_COMMAND='logger -t minecraft-restart "$*"'
-    RESTART_COMMAND='service minecraft restart'
-    ;;
 debian)
     LOG_COMMAND='printf "%s\n" "$*" | systemd-cat -t minecraft-restart'
     RESTART_COMMAND='systemctl restart minecraft.service'
     ;;
+freebsd)
+    RESTART_COMMAND='service minecraft restart'
+    ;;
 void)
-    LOG_COMMAND='logger -t minecraft-restart "$*"'
     RESTART_COMMAND='sv restart minecraft'
     ;;
 esac
