@@ -4,26 +4,36 @@
 # REQUIRE: LOGIN
 # KEYWORD: shutdown
 
+# shellcheck disable=SC1091
 . /etc/rc.subr
 
 name="minecraft"
+# shellcheck disable=SC2034
 rcvar=minecraft_enable
 
 load_rc_config $name
 
-: ${minecraft_enable:="NO"}
-: ${minecraft_user:="@MINECRAFT_USER@"}
-: ${minecraft_group:="@MINECRAFT_GROUP@"}
-: ${minecraft_dir:="@MINECRAFT_DIR@"}
-: ${service_script:="@SERVICE_SCRIPT@"}
+: "${minecraft_enable:=NO}"
+: "${minecraft_user:=@MINECRAFT_USER@}"
+: "${minecraft_group:=@MINECRAFT_GROUP@}"
+: "${minecraft_dir:=@MINECRAFT_DIR@}"
+: "${service_script:=@SERVICE_SCRIPT@}"
 
+# shellcheck disable=SC2034
 start_cmd="$service_script start"
+# shellcheck disable=SC2034
 stop_cmd="$service_script stop"
+# shellcheck disable=SC2034
 status_cmd="$service_script status"
+# shellcheck disable=SC2034
 log_cmd="$service_script log"
+# shellcheck disable=SC2034
 attach_cmd="$service_script attach"
+# shellcheck disable=SC2034
 cmd_cmd="$service_script cmd"
+# shellcheck disable=SC2034
 reload_cmd="$service_script reload"
+# shellcheck disable=SC2034
 extra_commands="log attach cmd reload"
 
 run_rc_command "$@"

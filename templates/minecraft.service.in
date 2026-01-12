@@ -1,3 +1,4 @@
+# shellcheck disable=SC1035,SC1073,SC1020,SC1072
 [Unit]
 Description=Minecraft Server
 
