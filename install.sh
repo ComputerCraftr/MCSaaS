@@ -352,8 +352,7 @@ void)
     ;;
 esac
 
-sed -e "s|@CONFIG_FILE@|$(escape_sed_replacement "$CONFIG_FILE")|g" \
-    -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
+sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@STATUS_COMMAND@|$(escape_sed_replacement "$STATUS_COMMAND")|g" \
     -e "s|@START_COMMAND@|$(escape_sed_replacement "$START_COMMAND")|g" \
     "$TEMPLATE_DIR/monitor.sh.in" >"$MONITOR_SCRIPT"
@@ -377,8 +376,7 @@ void)
     ;;
 esac
 
-sed -e "s|@CONFIG_FILE@|$(escape_sed_replacement "$CONFIG_FILE")|g" \
-    -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
+sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
     -e "s|@RESTART_COMMAND@|$(escape_sed_replacement "$RESTART_COMMAND")|g" \
     "$TEMPLATE_DIR/restart.sh.in" >"$RESTART_SCRIPT"
 

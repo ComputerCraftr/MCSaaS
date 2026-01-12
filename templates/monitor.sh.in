@@ -9,11 +9,6 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-CONFIG_FILE="@CONFIG_FILE@"
-
-# Source the configuration file
-. "$CONFIG_FILE"
-
 log() {
     @LOG_COMMAND@
 }
