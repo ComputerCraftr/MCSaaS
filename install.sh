@@ -214,21 +214,28 @@ echo "Rendering the configuration file..."
 temp_config=$(mktemp)
 
 CONFIG_OWNER="root:$(id -gn 0)"
-RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+RESOURCE_LIMIT_LINE=''
 # shellcheck disable=SC2016
-START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
+START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
 if [ "$USE_RUNIT" -eq 1 ]; then
     SERVICE_LINE="RUNIT_SERVICE_DIR=\"$RUNIT_SERVICE_DIR\""
+    case "$OS" in
+    freebsd)
+        RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+        # shellcheck disable=SC2016
+        START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
+        ;;
+    esac
 else
     case "$OS" in
     debian)
         SERVICE_LINE='SERVICE_UNIT="/etc/systemd/system/minecraft.service"'
-        RESOURCE_LIMIT_LINE=""
-        # shellcheck disable=SC2016
-        START_COMMAND_LINE='START_COMMAND="$MINECRAFT_COMMAND"'
         ;;
     freebsd)
         SERVICE_LINE='RC_SCRIPT="/usr/local/etc/rc.d/minecraft"'
+        RESOURCE_LIMIT_LINE='RESOURCE_LIMIT_COMMAND="ulimit -u 256"'
+        # shellcheck disable=SC2016
+        START_COMMAND_LINE='START_COMMAND="$RESOURCE_LIMIT_COMMAND && $MINECRAFT_COMMAND"'
         ;;
     void)
         SERVICE_LINE="RUNIT_SERVICE_DIR=\"$RUNIT_SERVICE_DIR\""
