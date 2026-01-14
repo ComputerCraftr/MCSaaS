@@ -437,6 +437,9 @@ chmod +x "$RESTART_SCRIPT"
 echo "Setting up cron jobs..."
 current_crontab=$(crontab -l 2>/dev/null || true)
 
+CRON_CACHE_DIR="${HOME:-/root}/.cache"
+mkdir -p "$CRON_CACHE_DIR"
+
 monitor_cron="*/30 * * * * $MONITOR_SCRIPT"
 restart_cron="0 4 * * * $RESTART_SCRIPT"
 
