@@ -15,6 +15,9 @@ if [ "$(id -u -n)" = "$MINECRAFT_USER" ]; then
     RUN_MINECRAFT_CMD() {
         "$@"
     }
+    RUN_MINECRAFT_EXEC() {
+        exec "$@"
+    }
 else
     # Resolve chpst lazily so services running as root can drop privileges.
     if [ -z "${CHPST_PATH:-}" ]; then
@@ -26,6 +29,9 @@ else
     fi
     RUN_MINECRAFT_CMD() {
         "$CHPST_PATH" -u "$MINECRAFT_USER" -- "$@"
+    }
+    RUN_MINECRAFT_EXEC() {
+        exec "$CHPST_PATH" -u "$MINECRAFT_USER" -- "$@"
     }
 fi
 
@@ -86,24 +92,28 @@ minecraft_start() {
 
         # Wait for the tmux exit signal in order to allow process supervision
         if [ "$RUNIT_WAIT" -eq 1 ]; then
-            runit_cleanup() {
-                rc=$?
-                if [ -n "${wait_pid:-}" ]; then
-                    kill "$wait_pid" 2>/dev/null || true
-                    wait "$wait_pid" 2>/dev/null || true
-                fi
-                minecraft_stop || rc=$?
-                exit $rc
-            }
-            trap runit_cleanup INT TERM HUP
-            RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" wait-for "exit-$TMUX_SESSION" &
-            wait_pid=$!
-            wait "$wait_pid"
+            RUN_MINECRAFT_EXEC "$0" --runit-wait
         fi
     else
         echo "A tmux session named '$TMUX_SESSION' is already running."
         return 1
     fi
+}
+
+session_wait() {
+    runit_cleanup() {
+        rc=$?
+        if [ -n "${wait_pid:-}" ]; then
+            kill "$wait_pid" 2>/dev/null || true
+            wait "$wait_pid" 2>/dev/null || true
+        fi
+        minecraft_stop || rc=$?
+        exit "$rc"
+    }
+    trap runit_cleanup INT TERM HUP
+    RUN_MINECRAFT_CMD "$TMUX_PATH" -S "$TMUX_SOCKET_PATH" wait-for "exit-$TMUX_SESSION" &
+    wait_pid=$!
+    wait "$wait_pid"
 }
 
 session_running() {
@@ -229,6 +239,9 @@ case "$1" in
         exit 2
         ;;
     esac
+    ;;
+--runit-wait)
+    session_wait
     ;;
 start)
     minecraft_start
