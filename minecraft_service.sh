@@ -58,7 +58,7 @@ minecraft_start() {
         try_perm chmod -R u+rwX,g+rwX,o-rwx "$MINECRAFT_DIR"
 
         # Start the Minecraft server
-        if [ "$RUNIT_WAIT" -eq 1 ]; then
+        if [ "${1:-}" = "runit" ]; then
             tmux_start_command="$START_COMMAND"
             # Strip any leading exec so that we can notify tmux later
             case "$tmux_start_command" in
@@ -91,7 +91,7 @@ minecraft_start() {
         try_perm chmod -R u+rwX,g+rwX,o-rwx "$TMUX_SOCKET_DIR"
 
         # Wait for the tmux exit signal in order to allow process supervision
-        if [ "$RUNIT_WAIT" -eq 1 ]; then
+        if [ "${1:-}" = "runit" ]; then
             RUN_MINECRAFT_EXEC "$0" --runit-wait
         fi
     else
@@ -107,7 +107,8 @@ session_wait() {
             kill "$wait_pid" 2>/dev/null || true
             wait "$wait_pid" 2>/dev/null || true
         fi
-        minecraft_stop || rc=$?
+        # Void Linux has a 7 second shutdown timeout before killing runit services
+        minecraft_stop "0" || rc=$?
         exit "$rc"
     }
     trap runit_cleanup INT TERM HUP
@@ -136,15 +137,17 @@ minecraft_stop() {
         return 0
     fi
 
-    # Warn players with a 20-second countdown
-    echo "Warning players..."
-    for i in $(seq 20 -1 1); do
-        issue_cmd "say Shutting down in $i second(s)"
-        if [ $((i % 5)) -eq 0 ]; then
-            echo "$i seconds remaining..."
-        fi
-        sleep 1
-    done
+    if [ "${1:-20}" -gt 0 ]; then
+        # Warn players with a countdown
+        echo "Warning players..."
+        for i in $(seq "${1:-20}" -1 1); do
+            issue_cmd "say Shutting down in $i second(s)"
+            if [ $((i % 5)) -eq 0 ]; then
+                echo "$i seconds remaining..."
+            fi
+            sleep 1
+        done
+    fi
 
     # Issue the stop command
     echo "Stopping server..."
@@ -159,7 +162,7 @@ minecraft_stop() {
     while session_running; do
         sleep 1
         wait=$((wait + 1))
-        if [ $wait -gt 60 ]; then
+        if [ $wait -gt 20 ]; then
             echo "Timed out waiting for server to stop."
             return 1
         fi
@@ -225,14 +228,12 @@ minecraft_status() {
     fi
 }
 
-RUNIT_WAIT=0
-case "$1" in
+case "${1:-}" in
 --runit)
     shift
     case "$1" in
     start)
-        RUNIT_WAIT=1
-        minecraft_start
+        minecraft_start "runit"
         ;;
     *)
         echo "Usage: $0 [--runit] start"
