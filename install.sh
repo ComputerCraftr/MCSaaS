@@ -137,14 +137,14 @@ install_packages() {
     case "$OS" in
     debian)
         apt update
-        apt install -y tmux curl runit openjdk-17-jre-headless
+        apt install -y tmux curl runit openjdk-21-jre-headless
         ;;
     freebsd)
         pkg update
-        pkg install -y tmux curl runit openjdk17-jre
+        pkg install -y tmux curl runit openjdk21-jre
         ;;
     void)
-        xbps-install -Suy tmux curl runit openjdk17-jre
+        xbps-install -Suy tmux curl runit openjdk21-jre
         ;;
     esac
 }
