@@ -10,7 +10,7 @@ Type=forking
 User=@MINECRAFT_USER@
 Group=@MINECRAFT_GROUP@
 Nice=5
-TimeoutStopSec=90
+TimeoutStopSec=60
 
 ProtectHome=read-only
 ProtectSystem=full

@@ -374,7 +374,14 @@ fi
 echo "Enabling the Minecraft service..."
 enable_service
 
-# Step 9: Create the monitoring script
+# Step 9: Install runit shutdown hook (Void/runit)
+SHUTDOWN_DIR="/etc/runit/shutdown.d"
+if [ "$OS" = "void" ] && [ -d "$SHUTDOWN_DIR" ]; then
+    echo "Installing runit shutdown hook..."
+    cp "$TEMPLATE_DIR/runit.shutdown.stop-minecraft.sh.in" "$SHUTDOWN_DIR/00-stop-minecraft.sh"
+fi
+
+# Step 10: Create the monitoring script
 echo "Creating the monitoring script..."
 
 LOG_COMMAND='logger -t minecraft-monitor "$*"'
@@ -406,12 +413,12 @@ sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
 
 chmod +x "$MONITOR_SCRIPT"
 
-# Step 10: Create the restart script
+# Step 11: Create the restart script
 echo "Creating the restart script..."
 
 LOG_COMMAND='logger -t minecraft-restart "$*"'
 if [ "$USE_RUNIT" -eq 1 ]; then
-    RESTART_COMMAND='sv restart minecraft'
+    RESTART_COMMAND='sv -w 60 restart minecraft'
 else
     case "$OS" in
     debian)
@@ -422,7 +429,7 @@ else
         RESTART_COMMAND='service minecraft restart'
         ;;
     void)
-        RESTART_COMMAND='sv restart minecraft'
+        RESTART_COMMAND='sv -w 60 restart minecraft'
         ;;
     esac
 fi
@@ -433,7 +440,7 @@ sed -e "s|@LOG_COMMAND@|$(escape_sed_replacement "$LOG_COMMAND")|g" \
 
 chmod +x "$RESTART_SCRIPT"
 
-# Step 11: Set up cron jobs without creating duplicates
+# Step 12: Set up cron jobs without creating duplicates
 echo "Setting up cron jobs..."
 current_crontab=$(crontab -l 2>/dev/null || true)
 

@@ -105,10 +105,9 @@ session_wait() {
         rc=$?
         if [ -n "${wait_pid:-}" ]; then
             kill "$wait_pid" 2>/dev/null || true
-            wait "$wait_pid" 2>/dev/null || true
         fi
         # Void Linux has a 7 second shutdown timeout before killing runit services
-        minecraft_stop "0" || rc=$?
+        minecraft_stop || rc=$?
         exit "$rc"
     }
     trap runit_cleanup INT TERM HUP

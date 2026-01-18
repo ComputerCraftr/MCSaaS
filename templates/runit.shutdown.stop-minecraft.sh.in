@@ -1,0 +1,3 @@
+# shellcheck disable=SC2148
+msg "Waiting for Minecraft to stop..."
+sv -w 60 force-stop minecraft
